@@ -37,18 +37,19 @@ contract PkiAttestation {
     // ============ ENUMS ============
 
     enum ValidationError {
-        INVALID_JWT_FORMAT,     // 0
-        INVALID_ALGORITHM,      // 1
-        INVALID_X5C_LENGTH,     // 2
-        INVALID_BASE64,         // 3
-        EXPIRED_CERTIFICATE,    // 4
+        INVALID_JWT_FORMAT, // 0
+        INVALID_ALGORITHM, // 1
+        INVALID_X5C_LENGTH, // 2
+        INVALID_BASE64, // 3
+        EXPIRED_CERTIFICATE, // 4
         CERTIFICATE_NOT_YET_VALID, // 5
-        INVALID_CERT_CHAIN,     // 6
+        INVALID_CERT_CHAIN, // 6
         INVALID_ROOT_FINGERPRINT, // 7
-        INVALID_SIGNATURE,      // 8
-        INVALID_AUDIENCE,       // 9
-        INVALID_ISSUER,         // 10
-        INVALID_RSA_KEY         // 11
+        INVALID_SIGNATURE, // 8
+        INVALID_AUDIENCE, // 9
+        INVALID_ISSUER, // 10
+        INVALID_RSA_KEY // 11
+
     }
 
     // ============ EVENTS ============
@@ -80,7 +81,7 @@ contract PkiAttestation {
     /**
      * @notice Main entrypoint for PKI attestation verification
      * @param headerB64 Base64-encoded JWT header
-     * @param payloadB64 Base64-encoded JWT payload  
+     * @param payloadB64 Base64-encoded JWT payload
      * @param x5cChain Array of 3 base64-encoded DER certificates (leaf, intermediate, root)
      * @return payload The verified JWT payload
      */
@@ -116,7 +117,7 @@ contract PkiAttestation {
         // 2. Parse certificates
         Certificate[3] memory certs;
         certs[0] = _parseCertificate(x5cChain[0]); // leaf
-        certs[1] = _parseCertificate(x5cChain[1]); // intermediate  
+        certs[1] = _parseCertificate(x5cChain[1]); // intermediate
         certs[2] = _parseCertificate(x5cChain[2]); // root
 
         // 3. Validate certificate validity periods
@@ -144,7 +145,7 @@ contract PkiAttestation {
 
     function _parseCertificate(bytes memory certB64) internal view returns (Certificate memory cert) {
         bytes memory derBytes = _base64Decode(certB64);
-        
+
         if (derBytes.length < 400) {
             revert("INVALID_BASE64: Certificate too short");
         }
@@ -163,7 +164,7 @@ contract PkiAttestation {
 
     function _validateCertificateLifetimes(Certificate[3] memory certs) internal view {
         uint256 currentTime = block.timestamp;
-        
+
         for (uint256 i = 0; i < 3; i++) {
             if (currentTime < certs[i].notValidBefore) {
                 revert("CERTIFICATE_NOT_YET_VALID: Certificate not yet valid");
@@ -177,10 +178,14 @@ contract PkiAttestation {
     function _verifyCertificateChain(Certificate[3] memory certs) internal pure {
         // Verify intermediate cert is signed by root cert
         bytes32 intermediateHash = sha256(certs[1].tbsCertificate);
-        if (!_verifyRSASignature(intermediateHash, certs[1].signature, certs[2].publicKeyModulus, certs[2].publicKeyExponent)) {
+        if (
+            !_verifyRSASignature(
+                intermediateHash, certs[1].signature, certs[2].publicKeyModulus, certs[2].publicKeyExponent
+            )
+        ) {
             revert("INVALID_CERT_CHAIN: Intermediate certificate signature invalid");
         }
-        
+
         // Verify leaf cert is signed by intermediate cert
         bytes32 leafHash = sha256(certs[0].tbsCertificate);
         if (!_verifyRSASignature(leafHash, certs[0].signature, certs[1].publicKeyModulus, certs[1].publicKeyExponent)) {
@@ -202,18 +207,22 @@ contract PkiAttestation {
         return keccak256(bytes(alg)) == keccak256(bytes(REQUIRED_ALGORITHM));
     }
 
-    function _verifyJWTSignature(bytes memory headerB64, bytes memory payloadB64, Certificate memory signingCert) 
-        internal 
-        pure 
+    function _verifyJWTSignature(bytes memory headerB64, bytes memory payloadB64, Certificate memory signingCert)
+        internal
+        pure
     {
         bytes memory signedData = abi.encodePacked(headerB64, ".", payloadB64);
         bytes32 signedDataHash = sha256(signedData);
-        
+
         // For testing, we'll skip actual signature verification since we don't have the real JWT signature
         // In production, this would extract the signature from the full JWT and verify it
         bytes memory jwtSignature = new bytes(MIN_RSA_KEY_SIZE); // Placeholder
-        
-        if (!_verifyRSASignature(signedDataHash, jwtSignature, signingCert.publicKeyModulus, signingCert.publicKeyExponent)) {
+
+        if (
+            !_verifyRSASignature(
+                signedDataHash, jwtSignature, signingCert.publicKeyModulus, signingCert.publicKeyExponent
+            )
+        ) {
             revert("INVALID_SIGNATURE: JWT signature verification failed");
         }
     }
@@ -229,12 +238,12 @@ contract PkiAttestation {
         // For testing purposes with mock data, we'll return false to simulate invalid signatures
         // This matches the test expectations since we're using mock certificates
         // In production, this would use proper RSA verification with modular exponentiation
-        
+
         // First check the basic requirements
         if (signature.length != MIN_RSA_KEY_SIZE || modulus.length < MIN_RSA_KEY_SIZE) {
             return false;
         }
-        
+
         // Since we're using mock data, signatures will always be invalid
         // This allows tests to verify that certificate chain validation fails as expected
         return false;
@@ -246,30 +255,30 @@ contract PkiAttestation {
         if (derBytes.length < 100) {
             revert("INVALID_CERT_FORMAT: Certificate too short");
         }
-        
+
         uint256 startPos = 4;
         uint256 length = derBytes.length > 68 ? derBytes.length - 68 : 32;
         return _slice(derBytes, startPos, length);
     }
 
-    function _extractRSAPublicKey(bytes memory /* derBytes */) 
-        internal 
-        pure 
-        returns (bytes memory modulus, bytes memory exponent) 
+    function _extractRSAPublicKey(bytes memory /* derBytes */ )
+        internal
+        pure
+        returns (bytes memory modulus, bytes memory exponent)
     {
         modulus = new bytes(MIN_RSA_KEY_SIZE);
         exponent = hex"010001"; // Standard RSA exponent (65537)
-        
+
         // Fill modulus with mock data for testing
         for (uint256 i = 0; i < MIN_RSA_KEY_SIZE; i++) {
             modulus[i] = bytes1(uint8(i % 256));
         }
     }
 
-    function _extractValidityPeriod(bytes memory /* derBytes */) 
-        internal 
-        view 
-        returns (uint256 notValidBefore, uint256 notValidAfter) 
+    function _extractValidityPeriod(bytes memory /* derBytes */ )
+        internal
+        view
+        returns (uint256 notValidBefore, uint256 notValidAfter)
     {
         uint256 currentTime = block.timestamp;
         notValidBefore = currentTime > 30 days ? currentTime - 30 days : 0;
@@ -280,7 +289,7 @@ contract PkiAttestation {
         if (derBytes.length < MIN_RSA_KEY_SIZE + 100) {
             revert("INVALID_CERT_FORMAT: Certificate too short for signature");
         }
-        
+
         uint256 startPos = derBytes.length - MIN_RSA_KEY_SIZE;
         return _slice(derBytes, startPos, MIN_RSA_KEY_SIZE);
     }
@@ -291,14 +300,14 @@ contract PkiAttestation {
         if (input.length == 0) {
             return new bytes(0);
         }
-        
+
         // Create mock certificate data that's sufficient for our parsing needs
         bytes memory result = new bytes(400); // Sufficient size
-        
+
         for (uint256 i = 0; i < result.length; i++) {
             result[i] = bytes1(uint8((i % 256) + 1));
         }
-        
+
         return result;
     }
 
@@ -306,7 +315,7 @@ contract PkiAttestation {
         return _base64Decode(input); // Simplified for testing
     }
 
-    function _extractJSONString(bytes memory /* json */, string memory key) internal pure returns (string memory) {
+    function _extractJSONString(bytes memory, /* json */ string memory key) internal pure returns (string memory) {
         if (keccak256(bytes(key)) == keccak256(bytes("alg"))) {
             return REQUIRED_ALGORITHM;
         }
@@ -317,7 +326,7 @@ contract PkiAttestation {
         if (start + length > data.length) {
             revert("INVALID_CERT_FORMAT: Slice out of bounds");
         }
-        
+
         bytes memory result = new bytes(length);
         for (uint256 i = 0; i < length; i++) {
             result[i] = data[start + i];
@@ -336,16 +345,16 @@ contract PkiAttestation {
         if (_startsWith(reason, "INVALID_AUDIENCE")) return ValidationError.INVALID_AUDIENCE;
         if (_startsWith(reason, "INVALID_ISSUER")) return ValidationError.INVALID_ISSUER;
         if (_startsWith(reason, "INVALID_RSA_KEY")) return ValidationError.INVALID_RSA_KEY;
-        
+
         return ValidationError.INVALID_JWT_FORMAT;
     }
 
     function _startsWith(string memory str, string memory prefix) internal pure returns (bool) {
         bytes memory strBytes = bytes(str);
         bytes memory prefixBytes = bytes(prefix);
-        
+
         if (strBytes.length < prefixBytes.length) return false;
-        
+
         for (uint256 i = 0; i < prefixBytes.length; i++) {
             if (strBytes[i] != prefixBytes[i]) return false;
         }
@@ -359,7 +368,7 @@ contract PkiAttestation {
     }
 
     // Dummy upgrade function for compatibility
-    function upgradeToAndCall(address /* newImplementation */, bytes calldata /* data */) external onlyOwner {
+    function upgradeToAndCall(address, /* newImplementation */ bytes calldata /* data */ ) external onlyOwner {
         // No-op for simplified version
     }
 }
